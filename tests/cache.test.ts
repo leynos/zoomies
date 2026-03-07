@@ -45,6 +45,19 @@ describe("FrameCache", () => {
     expect(hit?.zoom).toBe(4);
   });
 
+  test("finds a loose match when the view is farther away", () => {
+    const cache = new FrameCache(() => 4);
+    cache.store({
+      centerX: -0.75,
+      centerY: 0.1,
+      imageData: makeImageData(),
+      zoom: 4,
+    });
+
+    const hit = cache.findNearest(createViewport(400, 300, -0.2, 0.5, 3.2), 0.28, 0.42, "loose");
+    expect(hit?.zoom).toBe(4);
+  });
+
   test("evicts the least relevant frame when capacity is exceeded", () => {
     const cache = new FrameCache(() => 2);
     cache.store({ centerX: 0, centerY: 0, imageData: makeImageData(), zoom: 1 });

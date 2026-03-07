@@ -1,7 +1,6 @@
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
-  type WheelEvent as ReactWheelEvent,
   useEffect,
   useRef,
   useState,
@@ -62,6 +61,11 @@ interface CursorState {
 }
 
 /**
+ * Immediate fallback surface used while the hi-fi render is still in flight.
+ */
+type PreviewSurface = "exact" | "loose" | "potato" | "tight";
+
+/**
  * Create a fresh metrics snapshot from a viewport.
  */
 function createMetrics(viewport: ViewportState): RenderMetrics {
@@ -111,6 +115,35 @@ function paintImageData(
   );
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
+  context.clearRect(0, 0, targetWidth, targetHeight);
+  context.drawImage(sourceCanvas, 0, 0, targetWidth, targetHeight);
+}
+
+/**
+ * Draw a low-resolution preview and preserve its crunchy upscaled look.
+ */
+function paintPotatoPreview(
+  context: CanvasRenderingContext2D,
+  imageData: RasterImageData,
+  targetWidth: number,
+  targetHeight: number,
+) {
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = imageData.width;
+  sourceCanvas.height = imageData.height;
+  const sourceContext = sourceCanvas.getContext("2d");
+
+  if (!sourceContext) {
+    return;
+  }
+
+  sourceContext.putImageData(
+    createRasterImageData(imageData.data, imageData.width, imageData.height) as ImageData,
+    0,
+    0,
+  );
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "low";
   context.clearRect(0, 0, targetWidth, targetHeight);
   context.drawImage(sourceCanvas, 0, 0, targetWidth, targetHeight);
 }
@@ -212,6 +245,71 @@ async function renderProgressively(
       requestAnimationFrame(() => resolve());
     });
   }
+}
+
+/**
+ * Paint the best currently available preview for the requested viewport.
+ */
+function paintPreviewSurface(
+  context: CanvasRenderingContext2D,
+  cache: FrameCache,
+  viewport: ViewportState,
+  settings: RendererSettings,
+): PreviewSurface {
+  const exactHit = cache.getExact(viewport);
+  if (exactHit) {
+    paintImageData(context, exactHit.imageData, viewport.width, viewport.height);
+    return "exact";
+  }
+
+  const tightFrame = cache.findNearest(
+    viewport,
+    settings.centerTolerance,
+    settings.zoomTolerance,
+    "tight",
+  );
+  if (tightFrame) {
+    paintApproximation(
+      context,
+      tightFrame.imageData,
+      {
+        ...viewport,
+        centerX: tightFrame.centerX,
+        centerY: tightFrame.centerY,
+        zoom: tightFrame.zoom,
+      },
+      viewport,
+    );
+    return "tight";
+  }
+
+  const looseFrame = cache.findNearest(
+    viewport,
+    settings.centerTolerance,
+    settings.zoomTolerance,
+    "loose",
+  );
+  if (looseFrame) {
+    paintApproximation(
+      context,
+      looseFrame.imageData,
+      {
+        ...viewport,
+        centerX: looseFrame.centerX,
+        centerY: looseFrame.centerY,
+        zoom: looseFrame.zoom,
+      },
+      viewport,
+    );
+    return "loose";
+  }
+
+  const preview = renderImageData(
+    createPreviewViewport(viewport, settings.previewDivisor),
+    settings.maxIterations,
+  );
+  paintPotatoPreview(context, preview, viewport.width, viewport.height);
+  return "potato";
 }
 
 /**
@@ -348,7 +446,23 @@ export function App() {
     });
 
     resizeObserver.observe(container);
-    return () => resizeObserver.disconnect();
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const point = {
+        x: (event.clientX - rect.left) / rect.width,
+        y: (event.clientY - rect.top) / rect.height,
+      };
+      const factor = event.deltaY > 0 ? 0.85 : 1.18;
+      setViewport((current) => zoomAtPoint(current, point.x, point.y, factor));
+    };
+
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => {
+      resizeObserver.disconnect();
+      canvas.removeEventListener("wheel", handleWheel);
+    };
   }, []);
 
   useEffect(() => {
@@ -391,31 +505,12 @@ export function App() {
       return;
     }
 
-    const nearFrame = cacheRef.current.findNearest(
-      viewport,
-      activeSettings.centerTolerance,
-      activeSettings.zoomTolerance,
-      "tight",
-    );
-    if (nearFrame) {
-      paintApproximation(
-        context,
-        nearFrame.imageData,
-        {
-          ...viewport,
-          centerX: nearFrame.centerX,
-          centerY: nearFrame.centerY,
-          zoom: nearFrame.zoom,
-        },
-        viewport,
-      );
-    } else {
-      const preview = renderImageData(
-        createPreviewViewport(viewport, activeSettings.previewDivisor),
-        activeSettings.maxIterations,
-      );
-      paintImageData(context, preview, viewport.width, viewport.height);
-    }
+    const previewSurface = paintPreviewSurface(context, cacheRef.current, viewport, activeSettings);
+    setMetrics((current) => ({
+      ...current,
+      status:
+        previewSurface === "tight" ? "Approx" : previewSurface === "loose" ? "Stretch" : "Potato",
+    }));
 
     const finalPixels = new Uint8ClampedArray(viewport.width * viewport.height * 4);
     const timer = window.setTimeout(() => {
@@ -514,16 +609,6 @@ export function App() {
       x: (event.clientX - rect.left) / rect.width,
       y: (event.clientY - rect.top) / rect.height,
     };
-  }
-
-  /**
-   * Handle zooming with the mouse wheel.
-   */
-  function handleWheel(event: ReactWheelEvent<HTMLCanvasElement>) {
-    event.preventDefault();
-    const point = getCanvasPoint(event.nativeEvent);
-    const factor = event.deltaY > 0 ? 0.85 : 1.18;
-    setViewport((current) => zoomAtPoint(current, point.x, point.y, factor));
   }
 
   /**
@@ -707,7 +792,6 @@ export function App() {
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
               onPointerLeave={handlePointerUp}
-              onWheel={handleWheel}
               tabIndex={0}
             />
             <div className={`${styles.panel} ${styles.overlay}`}>
