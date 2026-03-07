@@ -14,14 +14,18 @@ async function buildClient() {
   await mkdir(assetsDir, { recursive: true });
 
   const clientBuild = await build({
-    entryPoints: [path.join(rootDir, "src/client/main.tsx")],
+    entryPoints: {
+      app: path.join(rootDir, "src/client/main.tsx"),
+      "prefetch-worker": path.join(rootDir, "src/client/prefetch-worker.ts"),
+    },
     bundle: true,
     splitting: false,
     format: "esm",
     platform: "browser",
     target: ["es2022"],
     sourcemap: true,
-    outfile: path.join(assetsDir, "app.js"),
+    outdir: assetsDir,
+    entryNames: "[name]",
     loader: {
       ".css": "css",
       ".module.css": "local-css",

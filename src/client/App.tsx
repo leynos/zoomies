@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { FrameCache, type FrameQuality } from "../shared/cache";
+import { FrameCache } from "../shared/cache";
 import {
   DEFAULT_CENTER,
   DEFAULT_SETTINGS,
@@ -26,9 +26,11 @@ import {
   formatCenter,
   formatZoom,
   panViewport,
+  scaleViewportResolution,
   zoomAtPoint,
 } from "../shared/viewport";
 import styles from "./App.module.css";
+import { PrefetchWorkerPool } from "./prefetch-worker-pool";
 
 /**
  * Runtime-facing view metrics for the HUD.
@@ -65,6 +67,12 @@ interface CursorState {
  */
 type PreviewSurface = "exact" | "loose" | "potato" | "tight";
 
+const PREFETCH_WORKER_URL = "/assets/prefetch-worker.js";
+const PREFETCH_WORKER_COUNT = Math.max(
+  2,
+  Math.min(8, Math.max(2, Math.floor((navigator.hardwareConcurrency || 8) / 2))),
+);
+
 /**
  * Create a fresh metrics snapshot from a viewport.
  */
@@ -81,17 +89,6 @@ function createMetrics(viewport: ViewportState): RenderMetrics {
 
 /**
  * Produce a smaller preview viewport for quick fallback rendering.
- */
-function createPreviewViewport(viewport: ViewportState, divisor: number): ViewportState {
-  return {
-    ...viewport,
-    width: Math.max(48, Math.floor(viewport.width / divisor)),
-    height: Math.max(36, Math.floor(viewport.height / divisor)),
-  };
-}
-
-/**
- * Draw an ImageData to the target canvas, scaling as needed.
  */
 function paintImageData(
   context: CanvasRenderingContext2D,
@@ -320,7 +317,7 @@ function paintPreviewSurface(
   }
 
   const preview = renderImageData(
-    createPreviewViewport(viewport, settings.previewDivisor),
+    scaleViewportResolution(viewport, settings.previewDivisor),
     settings.maxIterations,
   );
   paintPotatoPreview(context, preview, viewport.width, viewport.height);
@@ -336,8 +333,10 @@ export function App() {
   const settingsRef = useRef<RendererSettings>(DEFAULT_SETTINGS);
   const cacheRef = useRef(new FrameCache(() => settingsRef.current.maxCacheEntries));
   const renderTokenRef = useRef(0);
+  const renderRequestIdRef = useRef(0);
   const prefetchTokenRef = useRef(0);
   const prefetchTimerRef = useRef<number | null>(null);
+  const prefetchWorkerPoolRef = useRef<PrefetchWorkerPool | null>(null);
   const cancelPrefetchRef = useRef<() => void>(() => {});
   const schedulePrefetchRef = useRef<() => void>(() => {});
   const isPrimaryRenderingRef = useRef(false);
@@ -361,6 +360,20 @@ export function App() {
     latestViewportRef.current = viewport;
   }, [viewport]);
 
+  useEffect(() => {
+    if (typeof Worker === "undefined") {
+      return;
+    }
+
+    const pool = new PrefetchWorkerPool(PREFETCH_WORKER_URL, PREFETCH_WORKER_COUNT);
+    prefetchWorkerPoolRef.current = pool;
+
+    return () => {
+      pool.dispose();
+      prefetchWorkerPoolRef.current = null;
+    };
+  }, []);
+
   /**
    * Cancel in-flight or queued speculative renders.
    */
@@ -372,6 +385,8 @@ export function App() {
       window.clearTimeout(prefetchTimerRef.current);
       prefetchTimerRef.current = null;
     }
+
+    prefetchWorkerPoolRef.current?.reset(PREFETCH_WORKER_URL);
   };
 
   /**
@@ -409,16 +424,37 @@ export function App() {
               return;
             }
 
-            const imageData =
-              target.quality === "preview"
-                ? renderImageData(
-                    createPreviewViewport(
-                      target.viewport,
-                      Math.max(2, settingsRef.current.previewDivisor - 2),
-                    ),
-                    settingsRef.current.maxIterations,
-                  )
-                : renderImageData(target.viewport, settingsRef.current.maxIterations);
+            const requestId = ++renderRequestIdRef.current;
+            let imageData: RasterImageData;
+
+            try {
+              imageData = prefetchWorkerPoolRef.current
+                ? (
+                    await prefetchWorkerPoolRef.current.enqueue({
+                      id: requestId,
+                      maxIterations: settingsRef.current.maxIterations,
+                      previewDivisor: settingsRef.current.previewDivisor,
+                      quality: target.quality,
+                      viewport: target.viewport,
+                    })
+                  ).imageData
+                : target.quality === "preview"
+                  ? renderImageData(
+                      scaleViewportResolution(
+                        target.viewport,
+                        Math.max(2, settingsRef.current.previewDivisor - 2),
+                      ),
+                      settingsRef.current.maxIterations,
+                    )
+                  : renderImageData(target.viewport, settingsRef.current.maxIterations);
+            } catch {
+              return;
+            }
+
+            if (token !== prefetchTokenRef.current || isPrimaryRenderingRef.current) {
+              return;
+            }
+
             cacheRef.current.store({
               centerX: target.viewport.centerX,
               centerY: target.viewport.centerY,

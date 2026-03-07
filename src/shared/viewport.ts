@@ -101,6 +101,22 @@ export function panViewport(
 }
 
 /**
+ * Create a lower-resolution viewport for preview rendering while keeping the same camera.
+ */
+export function scaleViewportResolution(
+  viewport: ViewportState,
+  divisor: number,
+  minimumWidth = 48,
+  minimumHeight = 36,
+): ViewportState {
+  return {
+    ...viewport,
+    width: Math.max(minimumWidth, Math.floor(viewport.width / divisor)),
+    height: Math.max(minimumHeight, Math.floor(viewport.height / divisor)),
+  };
+}
+
+/**
  * Format the center for the HUD.
  */
 export function formatCenter(viewport: ViewportState) {
