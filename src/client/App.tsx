@@ -20,6 +20,7 @@ import {
   renderImageData,
   renderSegment,
 } from "../shared/mandelbrot";
+import { createPrefetchTargets, filterPrefetchTargets } from "../shared/prefetch";
 import {
   type ViewportState,
   createViewport,
@@ -50,6 +51,14 @@ interface DragState {
   didDrag: boolean;
   lastX: number;
   lastY: number;
+}
+
+/**
+ * Cursor state used to predict likely next zoom targets.
+ */
+interface CursorState {
+  readonly x: number;
+  readonly y: number;
 }
 
 /**
@@ -172,6 +181,20 @@ function applySegment(
 }
 
 /**
+ * Paint a completed render strip over the current frame without clearing the canvas.
+ */
+function paintSegment(
+  context: CanvasRenderingContext2D,
+  viewport: ViewportState,
+  segment: RenderSegment,
+) {
+  const segmentHeight = segment.endRow - segment.startRow;
+  const segmentImage = createRasterImageData(segment.pixels, viewport.width, segmentHeight);
+
+  context.putImageData(segmentImage as ImageData, 0, segment.startRow);
+}
+
+/**
  * Render the current viewport in chunks to keep the UI responsive.
  */
 async function renderProgressively(
@@ -200,6 +223,16 @@ export function App() {
   const settingsRef = useRef<RendererSettings>(DEFAULT_SETTINGS);
   const cacheRef = useRef(new FrameCache(() => settingsRef.current.maxCacheEntries));
   const renderTokenRef = useRef(0);
+  const prefetchTokenRef = useRef(0);
+  const prefetchTimerRef = useRef<number | null>(null);
+  const cancelPrefetchRef = useRef<() => void>(() => {});
+  const schedulePrefetchRef = useRef<() => void>(() => {});
+  const isPrimaryRenderingRef = useRef(false);
+  const isPrefetchingRef = useRef(false);
+  const latestViewportRef = useRef<ViewportState>(
+    createViewport(1280, 720, DEFAULT_CENTER.x, DEFAULT_CENTER.y, 1),
+  );
+  const cursorRef = useRef<CursorState>({ x: 0.5, y: 0.5 });
   const dragRef = useRef<DragState>({ active: false, didDrag: false, lastX: 0, lastY: 0 });
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [viewport, setViewport] = useState(() =>
@@ -210,6 +243,83 @@ export function App() {
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  useEffect(() => {
+    latestViewportRef.current = viewport;
+  }, [viewport]);
+
+  /**
+   * Cancel in-flight or queued speculative renders.
+   */
+  cancelPrefetchRef.current = () => {
+    prefetchTokenRef.current += 1;
+    isPrefetchingRef.current = false;
+
+    if (prefetchTimerRef.current !== null) {
+      window.clearTimeout(prefetchTimerRef.current);
+      prefetchTimerRef.current = null;
+    }
+  };
+
+  /**
+   * Render likely follow-up zoom targets into the cache once the cursor is calm.
+   */
+  schedulePrefetchRef.current = () => {
+    cancelPrefetchRef.current();
+
+    prefetchTimerRef.current = window.setTimeout(() => {
+      if (isPrimaryRenderingRef.current || isPrefetchingRef.current) {
+        return;
+      }
+
+      const token = ++prefetchTokenRef.current;
+      const viewportForPrefetch = latestViewportRef.current;
+      const targets = filterPrefetchTargets(
+        createPrefetchTargets(viewportForPrefetch, cursorRef.current),
+        (key) => {
+          const [zoom, centerX, centerY] = key.split("_");
+
+          return cacheRef.current.hasFrame(Number(zoom), Number(centerX), Number(centerY));
+        },
+      );
+
+      if (targets.length === 0) {
+        return;
+      }
+
+      isPrefetchingRef.current = true;
+
+      void (async () => {
+        try {
+          for (const target of targets) {
+            if (token !== prefetchTokenRef.current || isPrimaryRenderingRef.current) {
+              return;
+            }
+
+            const imageData = renderImageData(target, settingsRef.current.maxIterations);
+            cacheRef.current.store({
+              centerX: target.centerX,
+              centerY: target.centerY,
+              imageData,
+              zoom: target.zoom,
+            });
+            setMetrics((current) => ({
+              ...current,
+              cacheSize: cacheRef.current.size(),
+            }));
+
+            await new Promise<void>((resolve) => {
+              requestAnimationFrame(() => resolve());
+            });
+          }
+        } finally {
+          if (token === prefetchTokenRef.current) {
+            isPrefetchingRef.current = false;
+          }
+        }
+      })();
+    }, 250);
+  };
 
   useEffect(() => {
     const container = containerRef.current;
@@ -253,6 +363,8 @@ export function App() {
     }
 
     renderTokenRef.current += 1;
+    cancelPrefetchRef.current();
+    isPrimaryRenderingRef.current = true;
     const renderToken = renderTokenRef.current;
     const startedAt = performance.now();
     const activeSettings = settingsRef.current;
@@ -269,11 +381,13 @@ export function App() {
 
     if (exactHit) {
       paintImageData(context, exactHit.imageData, viewport.width, viewport.height);
+      isPrimaryRenderingRef.current = false;
       setMetrics((current) => ({
         ...current,
         progress: 1,
         renderTimeMs: "<1",
       }));
+      schedulePrefetchRef.current();
       return;
     }
 
@@ -311,13 +425,7 @@ export function App() {
         }
 
         applySegment(finalPixels, viewport, segment);
-
-        const partialImage = createRasterImageData(
-          finalPixels.slice(),
-          viewport.width,
-          viewport.height,
-        );
-        paintImageData(context, partialImage, viewport.width, viewport.height);
+        paintSegment(context, viewport, segment);
 
         if (progress >= 1) {
           const finalImage = createRasterImageData(finalPixels, viewport.width, viewport.height);
@@ -327,6 +435,8 @@ export function App() {
             imageData: finalImage,
             zoom: viewport.zoom,
           });
+          isPrimaryRenderingRef.current = false;
+          schedulePrefetchRef.current();
         }
 
         setMetrics((current) => ({
@@ -341,6 +451,7 @@ export function App() {
 
     return () => {
       window.clearTimeout(timer);
+      isPrimaryRenderingRef.current = false;
     };
   }, [viewport]);
 
@@ -351,6 +462,7 @@ export function App() {
     key: Key,
     value: RendererSettings[Key],
   ) {
+    cancelPrefetchRef.current();
     cacheRef.current.clear();
     setSettings((current) => ({
       ...current,
@@ -363,6 +475,7 @@ export function App() {
    * Reset all settings and clear the cache.
    */
   function resetSettings() {
+    cancelPrefetchRef.current();
     cacheRef.current.clear();
     setSettings(DEFAULT_SETTINGS);
     setMetrics((current) => ({
@@ -377,6 +490,7 @@ export function App() {
    * Clear cached frames without changing the camera.
    */
   function flushCache() {
+    cancelPrefetchRef.current();
     cacheRef.current.clear();
     setMetrics((current) => ({
       ...current,
@@ -429,7 +543,11 @@ export function App() {
    * Continue drag panning when active.
    */
   function handlePointerMove(event: ReactPointerEvent<HTMLCanvasElement>) {
+    const point = getCanvasPoint(event.nativeEvent);
+    cursorRef.current = point;
+
     if (!dragRef.current.active) {
+      schedulePrefetchRef.current();
       return;
     }
 

@@ -57,6 +57,13 @@ export class FrameCache {
   }
 
   /**
+   * Return whether an exact frame already exists for the provided camera.
+   */
+  hasFrame(zoom: number, centerX: number, centerY: number) {
+    return this.#entries.has(createFrameKey(zoom, centerX, centerY));
+  }
+
+  /**
    * Find the nearest acceptable approximation.
    */
   findNearest(
