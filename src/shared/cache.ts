@@ -4,10 +4,16 @@ import { type ViewportState, getViewBounds } from "./viewport";
 /**
  * Cached image and its camera state.
  */
+export type FrameQuality = "full" | "preview";
+
+/**
+ * Cached image and its camera state.
+ */
 export interface FrameEntry {
   readonly centerX: number;
   readonly centerY: number;
   readonly imageData: RasterImageData;
+  readonly quality: FrameQuality;
   readonly zoom: number;
 }
 

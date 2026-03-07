@@ -21,6 +21,7 @@ describe("FrameCache", () => {
       centerX: viewport.centerX,
       centerY: viewport.centerY,
       imageData: makeImageData(),
+      quality: "full",
       zoom: viewport.zoom,
     });
 
@@ -33,6 +34,7 @@ describe("FrameCache", () => {
       centerX: -0.75,
       centerY: 0.1,
       imageData: makeImageData(),
+      quality: "full",
       zoom: 4,
     });
 
@@ -51,6 +53,7 @@ describe("FrameCache", () => {
       centerX: -0.75,
       centerY: 0.1,
       imageData: makeImageData(),
+      quality: "full",
       zoom: 4,
     });
 
@@ -60,9 +63,21 @@ describe("FrameCache", () => {
 
   test("evicts the least relevant frame when capacity is exceeded", () => {
     const cache = new FrameCache(() => 2);
-    cache.store({ centerX: 0, centerY: 0, imageData: makeImageData(), zoom: 1 });
-    cache.store({ centerX: 10, centerY: 10, imageData: makeImageData(), zoom: 1 });
-    cache.store({ centerX: 0.1, centerY: 0.1, imageData: makeImageData(), zoom: 1.1 });
+    cache.store({ centerX: 0, centerY: 0, imageData: makeImageData(), quality: "full", zoom: 1 });
+    cache.store({
+      centerX: 10,
+      centerY: 10,
+      imageData: makeImageData(),
+      quality: "full",
+      zoom: 1,
+    });
+    cache.store({
+      centerX: 0.1,
+      centerY: 0.1,
+      imageData: makeImageData(),
+      quality: "full",
+      zoom: 1.1,
+    });
 
     expect(cache.size()).toBe(2);
     expect(cache.getExact(createViewport(400, 300, 10, 10, 1))).toBeUndefined();

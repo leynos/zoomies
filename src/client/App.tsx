@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { FrameCache } from "../shared/cache";
+import { FrameCache, type FrameQuality } from "../shared/cache";
 import {
   DEFAULT_CENTER,
   DEFAULT_SETTINGS,
@@ -258,6 +258,11 @@ function paintPreviewSurface(
 ): PreviewSurface {
   const exactHit = cache.getExact(viewport);
   if (exactHit) {
+    if (exactHit.quality === "preview") {
+      paintPotatoPreview(context, exactHit.imageData, viewport.width, viewport.height);
+      return "potato";
+    }
+
     paintImageData(context, exactHit.imageData, viewport.width, viewport.height);
     return "exact";
   }
@@ -269,6 +274,11 @@ function paintPreviewSurface(
     "tight",
   );
   if (tightFrame) {
+    if (tightFrame.quality === "preview") {
+      paintPotatoPreview(context, tightFrame.imageData, viewport.width, viewport.height);
+      return "potato";
+    }
+
     paintApproximation(
       context,
       tightFrame.imageData,
@@ -290,6 +300,11 @@ function paintPreviewSurface(
     "loose",
   );
   if (looseFrame) {
+    if (looseFrame.quality === "preview") {
+      paintPotatoPreview(context, looseFrame.imageData, viewport.width, viewport.height);
+      return "potato";
+    }
+
     paintApproximation(
       context,
       looseFrame.imageData,
@@ -394,12 +409,22 @@ export function App() {
               return;
             }
 
-            const imageData = renderImageData(target, settingsRef.current.maxIterations);
+            const imageData =
+              target.quality === "preview"
+                ? renderImageData(
+                    createPreviewViewport(
+                      target.viewport,
+                      Math.max(2, settingsRef.current.previewDivisor - 2),
+                    ),
+                    settingsRef.current.maxIterations,
+                  )
+                : renderImageData(target.viewport, settingsRef.current.maxIterations);
             cacheRef.current.store({
-              centerX: target.centerX,
-              centerY: target.centerY,
+              centerX: target.viewport.centerX,
+              centerY: target.viewport.centerY,
               imageData,
-              zoom: target.zoom,
+              quality: target.quality,
+              zoom: target.viewport.zoom,
             });
             setMetrics((current) => ({
               ...current,
@@ -488,21 +513,25 @@ export function App() {
       ...current,
       cacheSize: cacheRef.current.size(),
       centerLabel: formatCenter(viewport),
-      progress: exactHit ? 1 : 0,
-      status: exactHit ? "Cache hit" : "Rendering",
+      progress: exactHit?.quality === "full" ? 1 : 0,
+      status: exactHit?.quality === "full" ? "Cache hit" : "Rendering",
       zoomLabel: formatZoom(viewport.zoom),
     }));
 
     if (exactHit) {
-      paintImageData(context, exactHit.imageData, viewport.width, viewport.height);
-      isPrimaryRenderingRef.current = false;
-      setMetrics((current) => ({
-        ...current,
-        progress: 1,
-        renderTimeMs: "<1",
-      }));
-      schedulePrefetchRef.current();
-      return;
+      if (exactHit.quality === "full") {
+        paintImageData(context, exactHit.imageData, viewport.width, viewport.height);
+        isPrimaryRenderingRef.current = false;
+        setMetrics((current) => ({
+          ...current,
+          progress: 1,
+          renderTimeMs: "<1",
+        }));
+        schedulePrefetchRef.current();
+        return;
+      }
+
+      paintPotatoPreview(context, exactHit.imageData, viewport.width, viewport.height);
     }
 
     const previewSurface = paintPreviewSurface(context, cacheRef.current, viewport, activeSettings);
@@ -528,6 +557,7 @@ export function App() {
             centerX: viewport.centerX,
             centerY: viewport.centerY,
             imageData: finalImage,
+            quality: "full",
             zoom: viewport.zoom,
           });
           isPrimaryRenderingRef.current = false;
