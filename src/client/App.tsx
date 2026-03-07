@@ -31,6 +31,7 @@ import {
   zoomAtPoint,
 } from "../shared/viewport";
 import styles from "./App.module.css";
+import { GpuFractalRenderer } from "./gpu-renderer";
 import { PrefetchWorkerPool } from "./prefetch-worker-pool";
 
 /**
@@ -338,6 +339,7 @@ export function App() {
   const prefetchTokenRef = useRef(0);
   const prefetchTimerRef = useRef<number | null>(null);
   const prefetchWorkerPoolRef = useRef<PrefetchWorkerPool | null>(null);
+  const gpuRendererRef = useRef<GpuFractalRenderer | null>(null);
   const hasLoadedSettingsRef = useRef(false);
   const cancelPrefetchRef = useRef<() => void>(() => {});
   const schedulePrefetchRef = useRef<() => void>(() => {});
@@ -392,6 +394,18 @@ export function App() {
     return () => {
       pool.dispose();
       prefetchWorkerPoolRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    gpuRendererRef.current = new GpuFractalRenderer();
+
+    return () => {
+      gpuRendererRef.current = null;
     };
   }, []);
 
@@ -600,6 +614,29 @@ export function App() {
 
     const finalPixels = new Uint8ClampedArray(viewport.width * viewport.height * 4);
     const timer = window.setTimeout(() => {
+      const gpuImage =
+        gpuRendererRef.current?.render(viewport, activeSettings.maxIterations) ?? null;
+      if (gpuImage) {
+        paintImageData(context, gpuImage, viewport.width, viewport.height);
+        cacheRef.current.store({
+          centerX: viewport.centerX,
+          centerY: viewport.centerY,
+          imageData: gpuImage,
+          quality: "full",
+          zoom: viewport.zoom,
+        });
+        isPrimaryRenderingRef.current = false;
+        schedulePrefetchRef.current();
+        setMetrics((current) => ({
+          ...current,
+          cacheSize: cacheRef.current.size(),
+          progress: 1,
+          renderTimeMs: (performance.now() - startedAt).toFixed(1),
+          status: "Ready",
+        }));
+        return;
+      }
+
       void renderProgressively(viewport, activeSettings.maxIterations, (segment, progress) => {
         if (renderToken !== renderTokenRef.current) {
           return;
