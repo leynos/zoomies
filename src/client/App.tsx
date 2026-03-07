@@ -31,6 +31,7 @@ import {
   zoomAtPoint,
 } from "../shared/viewport";
 import styles from "./App.module.css";
+import { CacheFlameGraph } from "./CacheFlameGraph";
 import { PrefetchWorkerPool } from "./prefetch-worker-pool";
 
 /**
@@ -353,6 +354,7 @@ export function App() {
     createViewport(1280, 720, DEFAULT_CENTER.x, DEFAULT_CENTER.y, 1),
   );
   const [metrics, setMetrics] = useState(() => createMetrics(viewport));
+  const cacheHistory = cacheRef.current.describeHistory(viewport, 12);
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -843,6 +845,18 @@ export function App() {
                 Reset Defaults
               </button>
             </div>
+          </section>
+
+          <section className={styles.panel}>
+            <header className={styles.controlHeader}>
+              <h2 className={styles.controlTitle}>Cache Flame</h2>
+              <span className={styles.helperText}>{cacheHistory.length} frames tracked</span>
+            </header>
+            <CacheFlameGraph entries={cacheHistory} />
+            <p className={styles.helperText}>
+              Newer cached renders appear lower in the flame. Wider, hotter bands are closer to the
+              active viewport and more likely to be reused cleanly.
+            </p>
           </section>
         </aside>
 

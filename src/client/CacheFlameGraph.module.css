@@ -1,0 +1,80 @@
+.figure {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0;
+}
+
+.graph {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.emptyState {
+  margin: 0;
+  color: #92a8c0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.legend {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.legendRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: baseline;
+}
+
+.legendBadge {
+  min-width: 3rem;
+  color: #73d8ff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.legendBadgePreview {
+  color: #ffc978;
+}
+
+.legendLabel {
+  min-width: 0;
+  color: #d9e5f2;
+  font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legendValue {
+  color: #92a8c0;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.axisLabel {
+  fill: #8ca4bd;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.axisLine {
+  stroke: rgb(255 255 255 / 12%);
+  stroke-width: 1;
+}
+
+.currentLine {
+  stroke: rgb(115 216 255 / 70%);
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+}
+
+.glow {
+  fill: rgb(115 216 255 / 12%);
+}

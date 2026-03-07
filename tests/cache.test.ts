@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { FrameCache } from "../src/shared/cache";
+import { FrameCache, describeCacheHistoryEntry } from "../src/shared/cache";
 import { createViewport } from "../src/shared/viewport";
 
 /**
@@ -81,5 +81,45 @@ describe("FrameCache", () => {
 
     expect(cache.size()).toBe(2);
     expect(cache.getExact(createViewport(400, 300, 10, 10, 1))).toBeUndefined();
+  });
+
+  test("describes exact matches with maximum strength", () => {
+    const viewport = createViewport(400, 300, -0.75, 0.1, 4);
+
+    const summary = describeCacheHistoryEntry(viewport, {
+      centerX: -0.75,
+      centerY: 0.1,
+      imageData: makeImageData(),
+      quality: "full",
+      zoom: 4,
+    });
+
+    expect(summary.isExact).toBe(true);
+    expect(summary.score).toBe(0);
+    expect(summary.strength).toBe(1);
+  });
+
+  test("returns recent cache history with nearest frames scoring higher", () => {
+    const cache = new FrameCache(() => 4);
+    cache.store({
+      centerX: -0.7,
+      centerY: 0.2,
+      imageData: makeImageData(),
+      quality: "preview",
+      zoom: 2,
+    });
+    cache.store({
+      centerX: -0.75,
+      centerY: 0.1,
+      imageData: makeImageData(),
+      quality: "full",
+      zoom: 4,
+    });
+
+    const history = cache.describeHistory(createViewport(400, 300, -0.75, 0.1, 4), 4);
+
+    expect(history).toHaveLength(2);
+    expect(history[0]?.quality).toBe("full");
+    expect(history[0]?.score).toBeLessThan(history[1]?.score ?? Number.POSITIVE_INFINITY);
   });
 });

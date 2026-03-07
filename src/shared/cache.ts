@@ -18,6 +18,23 @@ export interface FrameEntry {
 }
 
 /**
+ * Historical cache entry annotated with its distance from the active viewport.
+ */
+export interface CacheHistoryEntry {
+  readonly centerX: number;
+  readonly centerY: number;
+  readonly centerDistance: number;
+  readonly centerDistanceX: number;
+  readonly centerDistanceY: number;
+  readonly isExact: boolean;
+  readonly quality: FrameQuality;
+  readonly score: number;
+  readonly strength: number;
+  readonly zoom: number;
+  readonly zoomDistance: number;
+}
+
+/**
  * Search quality used when looking up nearby cached frames.
  */
 export type LookupMode = "loose" | "tight";
@@ -48,11 +65,14 @@ export class FrameCache {
    * Store a rendered frame.
    */
   store(entry: FrameEntry) {
+    const key = createFrameKey(entry.zoom, entry.centerX, entry.centerY);
+
     while (this.#entries.size >= this.maxEntries()) {
       this.evictWorst(entry.centerX, entry.centerY, entry.zoom);
     }
 
-    this.#entries.set(createFrameKey(entry.zoom, entry.centerX, entry.centerY), entry);
+    this.#entries.delete(key);
+    this.#entries.set(key, entry);
   }
 
   /**
@@ -67,6 +87,16 @@ export class FrameCache {
    */
   hasFrame(zoom: number, centerX: number, centerY: number) {
     return this.#entries.has(createFrameKey(zoom, centerX, centerY));
+  }
+
+  /**
+   * Describe cached frames in most-recent-first order and annotate proximity to the viewport.
+   */
+  describeHistory(viewport: ViewportState, limit = this.#entries.size) {
+    return Array.from(this.#entries.values())
+      .reverse()
+      .map((entry) => describeCacheHistoryEntry(viewport, entry))
+      .slice(0, limit);
   }
 
   /**
@@ -161,4 +191,33 @@ export class FrameCache {
  */
 export function createFrameKey(zoom: number, centerX: number, centerY: number) {
   return `${zoom.toFixed(8)}_${centerX.toFixed(14)}_${centerY.toFixed(14)}`;
+}
+
+/**
+ * Compute how useful a cached frame is for the active viewport.
+ */
+export function describeCacheHistoryEntry(
+  viewport: ViewportState,
+  entry: FrameEntry,
+): CacheHistoryEntry {
+  const bounds = getViewBounds(viewport);
+  const centerDistanceX = Math.abs(entry.centerX - viewport.centerX) / bounds.width;
+  const centerDistanceY = Math.abs(entry.centerY - viewport.centerY) / bounds.height;
+  const centerDistance = Math.max(centerDistanceX, centerDistanceY);
+  const zoomDistance = Math.abs(Math.log(entry.zoom) - Math.log(viewport.zoom));
+  const score = centerDistance * 2 + zoomDistance;
+
+  return {
+    centerX: entry.centerX,
+    centerY: entry.centerY,
+    centerDistance,
+    centerDistanceX,
+    centerDistanceY,
+    isExact: centerDistance === 0 && zoomDistance === 0,
+    quality: entry.quality,
+    score,
+    strength: 1 / (1 + score),
+    zoom: entry.zoom,
+    zoomDistance,
+  };
 }
