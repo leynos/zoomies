@@ -1,13 +1,14 @@
 .shell {
-  min-height: 100vh;
+  height: 100vh;
   background: radial-gradient(circle at top, rgb(21 39 63 / 80%), transparent 45%),
     linear-gradient(180deg, #071019 0%, #04070d 100%);
   color: #f4f8ff;
+  overflow: hidden;
 }
 
 .frame {
   display: grid;
-  min-height: 100vh;
+  height: 100vh;
   grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr);
 }
 
@@ -19,6 +20,7 @@
   border-right: 1px solid rgb(102 147 191 / 18%);
   background: rgb(5 11 19 / 78%);
   backdrop-filter: blur(20px);
+  overflow: auto;
 }
 
 .panel {
@@ -149,13 +151,13 @@
 
 .viewer {
   position: relative;
-  min-height: 100vh;
+  min-height: 0;
 }
 
 .canvasWrap {
   position: sticky;
   top: 0;
-  height: 100vh;
+  height: 100%;
 }
 
 .canvas {
@@ -201,6 +203,7 @@
 
 @media (width <= 900px) {
   .frame {
+    height: auto;
     grid-template-columns: 1fr;
   }
 
