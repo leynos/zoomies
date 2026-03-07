@@ -20,6 +20,7 @@ import {
   renderSegment,
 } from "../shared/mandelbrot";
 import { createPrefetchTargets, filterPrefetchTargets } from "../shared/prefetch";
+import { loadRendererSettings, saveRendererSettings } from "../shared/settings-storage";
 import {
   type ViewportState,
   createViewport,
@@ -337,6 +338,7 @@ export function App() {
   const prefetchTokenRef = useRef(0);
   const prefetchTimerRef = useRef<number | null>(null);
   const prefetchWorkerPoolRef = useRef<PrefetchWorkerPool | null>(null);
+  const hasLoadedSettingsRef = useRef(false);
   const cancelPrefetchRef = useRef<() => void>(() => {});
   const schedulePrefetchRef = useRef<() => void>(() => {});
   const isPrimaryRenderingRef = useRef(false);
@@ -354,6 +356,25 @@ export function App() {
 
   useEffect(() => {
     settingsRef.current = settings;
+  }, [settings]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const persistedSettings = await loadRendererSettings();
+        setSettings(persistedSettings);
+      } finally {
+        hasLoadedSettingsRef.current = true;
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedSettingsRef.current) {
+      return;
+    }
+
+    void saveRendererSettings(settings);
   }, [settings]);
 
   useEffect(() => {
