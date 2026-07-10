@@ -1,3 +1,7 @@
 dist/
 node_modules/
 coverage/
+*.pyc
+__pycache__/
+.typos-oxendict-base.json
+.typos-oxendict-base.toml
