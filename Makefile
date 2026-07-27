@@ -1,4 +1,7 @@
-.PHONY: spelling
+.PHONY: fmt spelling
+
+fmt:
+	mdformat-all
 
 TYPOS_VERSION ?= 1.48.0
 TYPOS := uv tool run typos@$(TYPOS_VERSION)

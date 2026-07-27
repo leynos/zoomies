@@ -2,7 +2,8 @@
 
 ## Tooling
 
-- All package management and JavaScript ecosystem execution must be done using `bun`.
+- All package management and JavaScript ecosystem execution must be done using
+  `bun`.
 - All linting and formatting must be done with `biome`.
 - All packaging must be done with `esbuild`.
 - All tests must be runnable using `bun test`.
