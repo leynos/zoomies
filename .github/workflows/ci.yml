@@ -18,9 +18,9 @@ jobs:
       - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76
       - uses: astral-sh/setup-uv@c5680ec91f7b9b91406fab4ded5d45245abf7b67
       - name: Install mdtablefix
-        uses: leynos/shared-actions/.github/actions/install-mdtablefix@c5a54701c8603a0fa756a6b34c49bc2af75a6c11
+        uses: leynos/shared-actions/.github/actions/install-mdtablefix@0606ca899ce2995a0c4bc78e660e80832e6e8855
         with:
-          version: "0.6.0"
+          version: "0.6.1"
       - run: bun install --frozen-lockfile
       - run: make check-fmt
       - run: bun run lint
