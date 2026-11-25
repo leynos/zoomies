@@ -7,9 +7,6 @@
 - All linting and formatting must be done with `biome`.
 - All packaging must be done with `esbuild`.
 - All tests must be runnable using `bun test`.
-- Markdown must pass `make spelling`. The tracked `typos.toml` is generated
-  from the shared en-GB-oxendict base plus `typos.local.toml`; do not edit it
-  by hand.
 
 ## Frontend Standards
 
@@ -19,3 +16,19 @@
 - Use semantic classes.
 - All code must be typechecked.
 - All code must include JSDoc.
+
+<!-- typos-config-builder:agents-md:start -->
+
+## Spelling
+
+- `make spelling` runs the pinned `typos-config-builder gate`, which
+  regenerates `typos.toml` from the shared en-GB-oxendict dictionary and
+  `typos.local.toml`, then checks spelling and the shared phrase corrections.
+- `typos.toml` is generated: never edit it by hand. Put narrow
+  repository-specific exceptions in `typos.local.toml`, as exact or full-line
+  patterns rather than bare accepted words.
+- When `make spelling` changes `typos.toml`, commit the regenerated file. If
+  the change is unrelated to your work, commit it in a separate base pull
+  request and stack your branch on it, so each review diff stays focused.
+
+<!-- typos-config-builder:agents-md:end -->
